@@ -6,10 +6,12 @@ import 'providers/mood_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_scaffold.dart';
 import 'screens/onboarding_screen.dart';
+import 'services/firebase_bootstrap.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await FirebaseBootstrap.initialize();
 
   // Uygulama açılmadan önce local verileri yükleyelim.
   final moodProvider = MoodProvider();

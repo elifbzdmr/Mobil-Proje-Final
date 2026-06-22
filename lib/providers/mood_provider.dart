@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/mood_data.dart';
@@ -5,6 +7,7 @@ import '../models/community_post.dart';
 import '../models/recommendation.dart';
 import '../models/song.dart';
 import '../models/user_profile.dart';
+import '../services/firebase_community_service.dart';
 import '../services/mood_repository.dart';
 import '../services/recommendation_service.dart';
 import '../services/storage_service.dart';
@@ -23,14 +26,19 @@ class MoodProvider extends ChangeNotifier {
     MoodRepository? repository,
     StorageService? storageService,
     RecommendationService? recommendationService,
+    FirebaseCommunityService? firebaseCommunityService,
   })  : _repository = repository ?? MoodRepository(),
         _storageService = storageService ?? StorageService(),
         _recommendationService =
-            recommendationService ?? RecommendationService();
+            recommendationService ?? RecommendationService(),
+        _firebaseCommunityService =
+            firebaseCommunityService ?? FirebaseCommunityService();
 
   final MoodRepository _repository;
   final StorageService _storageService;
   final RecommendationService _recommendationService;
+  final FirebaseCommunityService _firebaseCommunityService;
+  StreamSubscription<List<CommunityPost>>? _communitySubscription;
 
   Map<String, List<Song>> _songsByMood = <String, List<Song>>{};
   Map<String, int> _moodCounts = <String, int>{};
@@ -109,6 +117,7 @@ class MoodProvider extends ChangeNotifier {
     _themeMode = _parseThemeMode(await _storageService.getThemeMode());
     final storedPosts = await _storageService.getCommunityPosts();
     _communityPosts = storedPosts.map(CommunityPost.fromJson).toList();
+    await _startCommunitySync();
 
     await _loadAccounts();
     final profileMap = await _storageService.getProfile();
@@ -571,6 +580,7 @@ class MoodProvider extends ChangeNotifier {
     _communityPosts =
         _communityPosts.where((post) => post.id != postId).toList();
     notifyListeners();
+    await _firebaseCommunityService.deletePost(postId);
     await _persistCommunityPosts();
   }
 
@@ -874,6 +884,21 @@ class MoodProvider extends ChangeNotifier {
     await _storageService.saveCommunityPosts(
       _communityPosts.map((post) => post.toJson()).toList(),
     );
+    await _firebaseCommunityService.savePosts(_communityPosts);
+  }
+
+  Future<void> _startCommunitySync() async {
+    if (!_firebaseCommunityService.isEnabled) return;
+    await _firebaseCommunityService.savePosts(_communityPosts);
+    await _communitySubscription?.cancel();
+    _communitySubscription =
+        _firebaseCommunityService.watchPosts().listen((posts) async {
+      _communityPosts = posts;
+      await _storageService.saveCommunityPosts(
+        _communityPosts.map((post) => post.toJson()).toList(),
+      );
+      notifyListeners();
+    });
   }
 
   Future<void> _removeCommunityActivityForUser(String email) async {
@@ -883,6 +908,7 @@ class MoodProvider extends ChangeNotifier {
 
     for (final post in _communityPosts) {
       if (_accountKey(post.authorEmail) == userKey) {
+        await _firebaseCommunityService.deletePost(post.id);
         changed = true;
         continue;
       }
@@ -1066,6 +1092,12 @@ class MoodProvider extends ChangeNotifier {
       counter += 1;
     }
     return name;
+  }
+
+  @override
+  void dispose() {
+    _communitySubscription?.cancel();
+    super.dispose();
   }
 
   Song? _songFromPost(CommunityPost post) {
