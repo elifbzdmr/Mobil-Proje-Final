@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "445335067524",
+    "project_id": "mobil-proje-final",
+    "storage_bucket": "mobil-proje-final.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:445335067524:android:f079ce9a6204829c509bd1",
+        "android_client_info": {
+          "package_name": "com.example.bi_muzik"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD1p9YTw9Sgi-U1uxtuniXvlDOxO15p_3Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

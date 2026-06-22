@@ -20,9 +20,10 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'TODO',
-    appId: 'TODO',
-    messagingSenderId: 'TODO',
-    projectId: 'TODO',
+    apiKey: 'AIzaSyD1p9YTw9Sgi-U1uxtuniXvlDOxO15p_3Q',
+    appId: '1:445335067524:android:f079ce9a6204829c509bd1',
+    messagingSenderId: '445335067524',
+    projectId: 'mobil-proje-final',
+    storageBucket: 'mobil-proje-final.firebasestorage.app',
   );
 }

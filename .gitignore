@@ -34,6 +34,7 @@ migrate_working_dir/
 /build_web/
 /build_old_turkish_path_issue/
 /coverage/
+android/.kotlin/
 
 # Symbolication related
 app.*.symbols
