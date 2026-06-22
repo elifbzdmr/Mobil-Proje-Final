@@ -8,6 +8,7 @@ import '../models/recommendation.dart';
 import '../models/song.dart';
 import '../models/user_profile.dart';
 import '../services/firebase_community_service.dart';
+import '../services/firebase_user_data_service.dart';
 import '../services/mood_repository.dart';
 import '../services/recommendation_service.dart';
 import '../services/storage_service.dart';
@@ -27,17 +28,21 @@ class MoodProvider extends ChangeNotifier {
     StorageService? storageService,
     RecommendationService? recommendationService,
     FirebaseCommunityService? firebaseCommunityService,
+    FirebaseUserDataService? firebaseUserDataService,
   })  : _repository = repository ?? MoodRepository(),
         _storageService = storageService ?? StorageService(),
         _recommendationService =
             recommendationService ?? RecommendationService(),
         _firebaseCommunityService =
-            firebaseCommunityService ?? FirebaseCommunityService();
+            firebaseCommunityService ?? FirebaseCommunityService(),
+        _firebaseUserDataService =
+            firebaseUserDataService ?? FirebaseUserDataService();
 
   final MoodRepository _repository;
   final StorageService _storageService;
   final RecommendationService _recommendationService;
   final FirebaseCommunityService _firebaseCommunityService;
+  final FirebaseUserDataService _firebaseUserDataService;
   StreamSubscription<List<CommunityPost>>? _communitySubscription;
 
   Map<String, List<Song>> _songsByMood = <String, List<Song>>{};
@@ -272,6 +277,7 @@ class MoodProvider extends ChangeNotifier {
     _playlistOwners = <String, String>{};
     notifyListeners();
     await _persistAccounts();
+    await _firebaseUserDataService.saveAccount(_userProfile!);
     await _storageService.saveProfile(_userProfile!.toJson());
     await _storageService.savePreferredGenre(favoriteGenre);
     await _storageService.saveSessionEmail(_userProfile!.email);
@@ -314,6 +320,7 @@ class MoodProvider extends ChangeNotifier {
     _preferredGenre = profile.favoriteGenre;
     notifyListeners();
     await _persistAccounts();
+    await _firebaseUserDataService.saveAccount(_userProfile!);
     await _storageService.saveProfile(_userProfile!.toJson());
     await _storageService.savePreferredGenre(profile.favoriteGenre);
     await _storageService.saveSessionEmail(_userProfile!.email);
@@ -324,7 +331,14 @@ class MoodProvider extends ChangeNotifier {
     required String email,
     required String password,
   }) async {
-    final profile = _accounts[_accountKey(email)];
+    var profile = _accounts[_accountKey(email)];
+    if (profile == null) {
+      profile = await _firebaseUserDataService.getAccount(email);
+      if (profile != null) {
+        _accounts[_accountKey(profile.email)] = profile;
+        await _persistAccounts();
+      }
+    }
     if (profile == null) return false;
     if (password.trim().isEmpty) return false;
 
@@ -372,6 +386,7 @@ class MoodProvider extends ChangeNotifier {
     _accounts[_accountKey(_userProfile!.email)] = _userProfile!;
     notifyListeners();
     await _persistAccounts();
+    await _firebaseUserDataService.saveAccount(_userProfile!);
     await _storageService.saveProfile(_userProfile!.toJson());
     return true;
   }
@@ -396,6 +411,9 @@ class MoodProvider extends ChangeNotifier {
     }
     notifyListeners();
     await _persistAccounts();
+    if (email != null) {
+      await _firebaseUserDataService.deleteAccount(email);
+    }
     if (email != null) {
       await _removeCommunityActivityForUser(email);
       await _storageService.clearUserData(email);
@@ -869,6 +887,12 @@ class MoodProvider extends ChangeNotifier {
       _userProfile!.email,
       _librarySongs.map((song) => song.toJson()).toList(),
     );
+    await _firebaseUserDataService.saveUserMusicData(
+      email: _userProfile!.email,
+      librarySongs: _librarySongs,
+      playlists: _playlists,
+      playlistOwners: _playlistOwners,
+    );
   }
 
   Future<void> _persistPlaylists() async {
@@ -877,6 +901,12 @@ class MoodProvider extends ChangeNotifier {
     await _storageService.savePlaylistOwnersForUser(
       _userProfile!.email,
       _playlistOwners,
+    );
+    await _firebaseUserDataService.saveUserMusicData(
+      email: _userProfile!.email,
+      librarySongs: _librarySongs,
+      playlists: _playlists,
+      playlistOwners: _playlistOwners,
     );
   }
 
@@ -939,6 +969,14 @@ class MoodProvider extends ChangeNotifier {
     _accounts = storedAccounts.map(
       (key, value) => MapEntry(_accountKey(key), UserProfile.fromJson(value)),
     );
+    final cloudAccounts = await _firebaseUserDataService.getAccounts();
+    if (cloudAccounts.isNotEmpty) {
+      _accounts = <String, UserProfile>{
+        ...cloudAccounts.map((key, value) => MapEntry(_accountKey(key), value)),
+        ..._accounts,
+      };
+      await _persistAccounts();
+    }
   }
 
   Future<void> _persistAccounts() async {
@@ -947,6 +985,9 @@ class MoodProvider extends ChangeNotifier {
         (key, value) => MapEntry(key, value.toJson()),
       ),
     );
+    for (final profile in _accounts.values) {
+      await _firebaseUserDataService.saveAccount(profile);
+    }
   }
 
   Future<void> _loadUserMusicData(
@@ -956,10 +997,19 @@ class MoodProvider extends ChangeNotifier {
     final storedLibrary = await _storageService.getLibrarySongsForUser(email);
     final storedPlaylists = await _storageService.getPlaylistsForUser(email);
     final storedOwners = await _storageService.getPlaylistOwnersForUser(email);
+    final cloudData = await _firebaseUserDataService.getUserMusicData(email);
 
-    _librarySongs = storedLibrary.map(Song.fromStorageJson).toList();
-    _playlists = storedPlaylists;
-    _playlistOwners = storedOwners;
+    if (cloudData != null) {
+      _librarySongs = cloudData.librarySongs;
+      _playlists = cloudData.playlists;
+      _playlistOwners = cloudData.playlistOwners;
+      await _persistLibrary();
+      await _persistPlaylists();
+    } else {
+      _librarySongs = storedLibrary.map(Song.fromStorageJson).toList();
+      _playlists = storedPlaylists;
+      _playlistOwners = storedOwners;
+    }
 
     if (migrateLegacy &&
         _librarySongs.isEmpty &&
